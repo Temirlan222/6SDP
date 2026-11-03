@@ -1,0 +1,92 @@
+digraph EnergyGrid {
+  graph [rankdir=TB, bgcolor="white", fontname="Arial", fontsize=22, label="Energy Grid — Observer + Visitor (variant 12)", labelloc=t, pad=.35, nodesep=.3, ranksep=.6];
+  node [shape=box, style="rounded,filled", fontname="Arial", fontsize=11, fillcolor="#f8fafc", color="#64748b"];
+  edge [fontname="Arial", fontsize=9, color="#475569"];
+  Main [label="Main\ncomposition root", fillcolor="#e0e7ff"];
+  Runner [label="ProducerRunner\nrun / close"];
+  Executor [label="ExecutorService\nconfigurable pool", fillcolor="#e2e8f0"];
+  Main -> Runner [style=dashed, label="creates"];
+  Runner -> Executor [label="injected"];
+  subgraph cluster_observer {
+    label="Observer: typed push notifications"; color="#60a5fa"; fontname="Arial";
+    Observer [label="Observer<E> (interface)\nonEvent(E)", fillcolor="#dbeafe"];
+    Subject [label="Subject<E> (interface)\nsubscribe(type, observer)\nunsubscribe(type, observer)\npublish(E)", fillcolor="#dbeafe"];
+    EventSubject [label="EventSubject<E extends TypedEvent>\nEnumMap of CopyOnWriteArraySet\nsnapshot publication", fillcolor="#dbeafe"];
+    MeterSource [label="MeterReadingSource\nread(line, deltaKwh)"];
+    StatusSource [label="GridStatusSource\noutage(line)"];
+    TypedEvent [label="TypedEvent (interface)\ntype()"];
+    EventType [label="EventType (enum)\nMETER_READING / OUTAGE\nAGGREGATE / INSPECTION_REPORT"];
+    Event [label="EnergyEvent (immutable record)\ntype, sourceId, subtree, value, details", fillcolor="#eff6ff"];
+    Dashboard [label="GridDashboard\nAtomicInteger"];
+    Alarm [label="OutageAlarm\nAtomicInteger"];
+    Aggregate [label="UsageAggregator\nObserver + Subject", fillcolor="#bfdbfe"];
+    Summary [label="UsageSummary (immutable record)\nreadings, totalKwh\nheld in AtomicReference"];
+    Inspect [label="InspectionService\nonEvent → subtree.accept(visitor)", fillcolor="#fde68a"];
+    Log [label="EventLog\nConcurrentLinkedQueue"];
+    Once [label="OneShotNotice\nCAS + unsubscribe inside callback"];
+    EventSubject -> Subject [style=dashed, arrowhead=empty];
+    EventSubject -> Observer [dir=both, arrowtail=odiamond, arrowhead=none, label="per-type subscriptions"];
+    MeterSource -> EventSubject [arrowhead=empty];
+    StatusSource -> EventSubject [arrowhead=empty];
+    Aggregate -> EventSubject [arrowhead=empty];
+    Event -> TypedEvent [style=dashed, arrowhead=empty];
+    Event -> EventType;
+    Dashboard -> Observer [style=dashed, arrowhead=empty];
+    Alarm -> Observer [style=dashed, arrowhead=empty];
+    Aggregate -> Observer [style=dashed, arrowhead=empty];
+    Inspect -> Observer [style=dashed, arrowhead=empty];
+    Log -> Observer [style=dashed, arrowhead=empty];
+    Once -> Observer [style=dashed, arrowhead=empty];
+    Aggregate -> Summary;
+    Inspect -> Subject [label="publishes report"];
+    Once -> Subject [label="unsubscribes"];
+    Log -> Event [label="stores"];
+  }
+  subgraph cluster_tree {
+    label="Composite: immutable data, no calculations"; color="#4ade80"; fontname="Arial";
+    Element [label="GridElement (interface)\nid()\n<R> R accept(Visitor<R>)", fillcolor="#dcfce7"];
+    Container [label="GridContainer (interface)\nchildren()", fillcolor="#dcfce7"];
+    Grid [label="Grid"];
+    Substation [label="Substation"];
+    Line [label="Line"];
+    Consumer [label="Consumer\ndemandKw"];
+    Generator [label="Generator\noutputKw"];
+    Battery [label="Battery\nchargingKw (signed)"];
+    Meter [label="SmartMeter\nstandbyKw"];
+    Transformer [label="Transformer\nlossKw\n(new-element commit)", fillcolor="#bbf7d0"];
+    Container -> Element [arrowhead=empty];
+    Grid -> Container [style=dashed, arrowhead=empty];
+    Substation -> Container [style=dashed, arrowhead=empty];
+    Line -> Container [style=dashed, arrowhead=empty];
+    Grid -> Substation [dir=both, arrowtail=odiamond, arrowhead=none, label="children"];
+    Substation -> Line [dir=both, arrowtail=odiamond, arrowhead=none, label="children"];
+    Line -> Element [dir=both, arrowtail=odiamond, arrowhead=none, label="children"];
+    Consumer -> Element [style=dashed, arrowhead=empty];
+    Generator -> Element [style=dashed, arrowhead=empty];
+    Battery -> Element [style=dashed, arrowhead=empty];
+    Meter -> Element [style=dashed, arrowhead=empty];
+    Transformer -> Element [style=dashed, arrowhead=empty];
+  }
+  subgraph cluster_visitor {
+    label="Visitor: operations own traversal"; color="#c084fc"; fontname="Arial";
+    Visitor [label="Visitor<R> (interface)\nvisit(Grid/Substation/Line)\nvisit(Consumer/Generator/Battery/SmartMeter/Transformer)", fillcolor="#f3e8ff"];
+    Load [label="NetLoadVisitor\nDouble: net kW"];
+    Inventory [label="InventoryVisitor\nMap: accumulated state"];
+    Filter [label="HighLoadVisitor\nList<GridElement>: filtered devices"];
+    Json [label="JsonExportVisitor\nString: nested JSON"];
+    Count [label="LeafCountVisitor\nInteger: device count\n(new-visitor commit)", fillcolor="#e9d5ff"];
+    Load -> Visitor [style=dashed, arrowhead=empty];
+    Inventory -> Visitor [style=dashed, arrowhead=empty];
+    Filter -> Visitor [style=dashed, arrowhead=empty];
+    Json -> Visitor [style=dashed, arrowhead=empty];
+    Count -> Visitor [style=dashed, arrowhead=empty];
+  }
+  Main -> MeterSource [style=dashed];
+  Main -> StatusSource [style=dashed];
+  Main -> Grid [style=dashed, label="builds"];
+  Main -> Inspect [style=dashed, label="injects Load + reports subject"];
+  Event -> Element [label="related immutable subtree"];
+  Inspect -> Visitor [label="injected Visitor<Double>"];
+  Element -> Visitor [style=dashed, label="accept → visit(this)"];
+  Visitor -> Container [style=dashed, label="recurses through children"];
+}

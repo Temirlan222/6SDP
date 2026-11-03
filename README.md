@@ -1,41 +1,167 @@
-# Energy Grid — Assignment 6, variant 12
+# Assignment 6 — Energy Grid, вариант 12
 
-Separate Java 17 project. Runtime dependencies: standard library only; tests: JUnit 5.
-Build: `mvn clean verify`. Run: `java -jar target/energy-grid.jar 4` (pool size >=3).
-Open pom.xml as a Maven project in IntelliJ and run edu.aitu.energy.Main.
+Отдельный учебный проект **Observer + Visitor** на Java 17. TicketConcert не используется и не изменяется.
+Во время работы симулируются показания счётчиков и аварии линий. Базы, сети, реальных датчиков и стороннего event bus нет.
+Единственная библиотечная зависимость — **JUnit 5 для тестов**.
 
-## Baseline design
+## Запуск
 
-* Two sources: MeterReadingSource and GridStatusSource.
-* Typed immutable EnergyEvent with immutable Grid/Substation/Line/device data.
-* Generic Subject/Observer; per-type CopyOnWriteArraySet snapshots; synchronous push delivery.
-* Five required listener roles: GridDashboard, OutageAlarm, UsageAggregator, InspectionService, EventLog.
-  OneShotNotice additionally demonstrates unsubscribing inside its own callback.
-* UsageAggregator is both observer and subject; its atomic summary is republished as AGGREGATE.
-* Four visitor operations: NetLoadVisitor, InventoryVisitor, HighLoadVisitor, JsonExportVisitor.
-* Visitors own traversal; accept only selects the appropriate visit overload through double dispatch.
-* An OUTAGE event triggers NetLoadVisitor on only its related line; an INSPECTION_REPORT event returns the result.
-* Main is the composition root. Dependencies are passed in constructors. No lazy component initialization.
-* Three producer tasks use an injected ExecutorService. Futures are awaited, then shutdown/awaitTermination closes it.
+1. Открой `pom.xml` в IntelliJ IDEA → **Open as Project**, загрузи Maven dependencies.
+2. Project SDK — **JDK 17 или новее**.
+3. Запусти `edu.aitu.energy.Main` из `src/main/java`.
 
-Manual values: first line=10-4-2+.1=4.1 kW; second=20-5+3+.2=18.2 kW; whole grid=22.3 kW.
-25 tests include 4 threads x1000 events =4000 exact deliveries/aggregates, and concurrent subscription changes.
+Либо в терминале с Java 17+ и Maven:
 
-## Planned trade-off commits
+```shell
+mvn clean verify
+java -jar target/energy-grid.jar
+java -jar target/energy-grid.jar 3
+java -jar target/energy-grid.jar 4
+```
 
-Add a new visitor without editing elements, then add a new element and update the visitor family.
-The actual development dates are retained. This local session cannot demonstrate two weeks of development.
+Аргумент задаёт размер producer-пула; по умолчанию 4, минимум 3. В демонстрации всегда три producer-задачи.
+Готовый JAR входит в ZIP в `target/energy-grid.jar`; после распаковки его можно запускать без Maven.
+Для первой самостоятельной сборки Maven нужен доступ к зависимостям. Все данные — синтетические.
 
-## Trade-off 1: new visitor
+## Observer: два источника и подписчики
 
-Changed files: src/main/java/edu/aitu/energy/visitor/LeafCountVisitor.java,
-src/test/java/edu/aitu/energy/LeafCountVisitorTest.java, README.md.
-No tree element or Visitor interface changed. A new operation implements the existing visitor contract.
+* `MeterReadingSource` публикует METER_READING: очередная порция энергии в **kWh** для линии.
+* `GridStatusSource` публикует OUTAGE: авария конкретной линии.
+* `EnergyEvent` — immutable record: тип, источник, связанное поддерево, значение, пояснение.
+* Собственные generic-интерфейсы `Subject<E>` / `Observer<E>`; `TypedEvent` даёт generic-источнику доступ к типу события.
 
-## Trade-off 2: new element
+| Подписчик | Реакция |
+|---|---|
+| GridDashboard | Считает полученные показания и аварийные события |
+| OutageAlarm | Регистрирует число аварий |
+| UsageAggregator | Атомарно накапливает число показаний и kWh; как Subject публикует AGGREGATE |
+| InspectionService | При аварии запускает посетителя связанной линии и публикует INSPECTION_REPORT |
+| EventLog | Сохраняет агрегаты и результаты инспекций |
+| OneShotNotice | Обрабатывает одно уведомление и отписывается прямо из обработчика |
 
-Transformer adds 0.5 kW of losses. Updated files: tree/Transformer.java, visitor/Visitor.java,
-all five concrete visitor files, Main.java, TransformerTest.java, README.md (Java paths are below edu/aitu/energy).
-Unlike adding an operation, adding an element changes the common visitor contract and every visitor.
-The final demo contains 9 leaves, first-line net load 4.6 kW and whole-grid net load 22.8 kW.
-Baseline fixtures still contain the original eight devices and their hand-calculated 22.3 kW.
+Используется **push**: событие содержит всё нужное, подписчику не надо запрашивать меняющееся состояние источника.
+Это даёт согласованный снимок для обработки несколькими producer-потоками.
+Подписка задаётся отдельно для каждого EventType; add/remove работают во время публикации, включая из callback.
+
+### Семантика подписки и многопоточность
+
+EventSubject заранее создаёт EnumMap с CopyOnWriteArraySet для каждого типа; глобальной блокировки subject нет.
+Итератор получает snapshot подписчиков. Добавленный во время callback слушатель увидит последующие snapshots.
+Уже начатая публикация может вызвать отписанного слушателя, если он попал в её snapshot.
+OneShotNotice использует CAS, поэтому даже при нескольких snapshots учитывает только первое уведомление.
+Параллельные публикации не обещают общего порядка доставки. Повторная подписка того же объекта не дублирует уведомления.
+Если обработчик выбрасывает RuntimeException, остальные слушатели всё равно получают событие, затем ошибка возвращается producer.
+
+Агрегатор хранит одну AtomicReference<UsageSummary>: число и сумма обновляются согласованно одной CAS-операцией.
+При параллельной доставке события агрегатов могут прийти не по порядку, но summary() после завершения содержит точный итог.
+Dashboard/Alarm используют AtomicInteger, EventLog — ConcurrentLinkedQueue, дерево и события неизменяемы.
+
+## Visitor + Composite
+
+```text
+Grid
+└── Substation
+    ├── Line
+    │   ├── Consumer
+    │   ├── Generator
+    │   ├── Battery
+    │   ├── SmartMeter
+    │   └── Transformer  ← добавлен отдельным коммитом
+    └── Line → устройства
+```
+
+Три типа контейнеров, четыре уровня дерева, изначально четыре типа листьев; после trade-off коммита — пять.
+Элементы — records с данными и `accept()`. List.copyOf защищает список детей от внешних изменений.
+Элементы не считают нагрузку и не строят отчёты. Их единственная dispatch-операция: `return visitor.visit(this)`.
+
+| Visitor | Возвращает | Работа |
+|---|---|---|
+| NetLoadVisitor | Double | Суммарную нагрузку kW: потребители плюс, генераторы минус, батарея — заряд со знаком |
+| InventoryVisitor | Map<String,Integer> | Накапливает количества всех типов узлов во время обхода |
+| HighLoadVisitor | List<GridElement> | Возвращает устройства с мощностью выше порога; для батареи используется модуль |
+| JsonExportVisitor | String | Вручную формирует вложенный JSON; экранирует строки; не допускает NaN/Infinity |
+| LeafCountVisitor | Integer | Считает устройства, исключая контейнеры; добавлен отдельным коммитом |
+
+`Visitor<R>` — generic-интерфейс с отдельным overload visit для каждого конкретного типа узла.
+**Double dispatch:** сначала по фактическому классу элемента вызывается его accept, затем `visit(this)` выбирает
+overload конкретного типа и реализацию выбранного посетителя. Вызов `visitor.visit(element)` через GridElement
+не решает эту задачу: Java выбирает перегрузку по статическому типу, такого overload у нас нет.
+
+**Обход выполняет visitor.** Контейнерный visit вызывает accept на детях. Так numeric visitor суммирует результаты,
+JSON visitor сохраняет границы children, фильтр собирает список. accept элементов сам не обходит детей — двойного обхода нет.
+InventoryVisitor имеет состояние одной операции: его не передают producer-потокам; для нового независимого отчёта создают новый экземпляр.
+Единственный visitor, разделяемый конкурентными инспекциями, — stateless NetLoadVisitor.
+
+## Связь двух паттернов
+
+```text
+GridStatusSource.OUTAGE(line-1)
+        ↓
+InspectionService.onEvent
+        ↓
+event.subtree().accept(NetLoadVisitor)
+        ↓
+INSPECTION_REPORT(line-1, рассчитанные kW)
+        ↓
+EventLog
+```
+
+InspectionService не получает корень Grid: он может обходить только поддерево из события.
+Так авария line-1 не включает line-2 в результат. Источник reports — обычный EventSubject; отдельный ReportSource-класс не нужен.
+
+## Потоки и завершение
+
+Main — **единственный composition root**: создаёт дерево, источники, слушателей, visitors, executor и подписки.
+Зависимости передаются конструкторами, ленивого создания бизнес-компонентов нет.
+ProducerRunner получает ExecutorService через конструктор, отправляет задачи и ожидает все Future.
+Ошибка одной задачи возвращается после ожидания остальных принятых задач.
+close() вызывает shutdown/awaitTermination: нормальное завершение дожидается обработки первичных и вложенных событий.
+Уведомления синхронны в producer-потоке, поэтому завершение producer означает завершение его callbacks.
+При timeout/interrupt выполняется аварийная отмена с явной ошибкой; это не выдаётся за успешное завершение без потерь.
+
+## Ручная проверка чисел
+
+Базовые test fixtures до Transformer:
+
+* line-1: 10 − 4 − 2 + 0.1 = **4.1 kW**.
+* line-2: 20 − 5 + 3 + 0.2 = **18.2 kW**.
+* Grid: **22.3 kW**, 8 устройств, 1 Grid + 1 Substation + 2 Line.
+* Фильтр >10 kW возвращает только Consumer shop (20 kW).
+
+В финальном Main на line-1 добавлен Transformer с потерями 0.5 kW:
+line-1 = **4.6 kW**, Grid = **22.8 kW**, 9 устройств. Небольшие хвосты double при печати допустимы.
+За запуск две meter-задачи дают 20 показаний, 30 kWh, 20 агрегатов; status-задача даёт 10 аварий и 10 инспекций.
+Dashboard получает 30 событий; EventLog — 30 результатов; OneShotNotice — 1.
+
+## Тесты
+
+`mvn clean verify`: **28 JUnit 5 тестов**.
+
+* EventSubjectTest: типы, дубликаты, отписка, subscribe/unsubscribe внутри callback, рекурсивная публикация, ошибка слушателя.
+* VisitorTest: ручные числовые значения, double dispatch, состояние, фильтр, точный вложенный JSON, escaping и неизменяемость детей.
+* IntegrationTest: цепочка Observer→Subject, согласованный агрегат, инспекция только нужной линии, независимые слушатели.
+* ConcurrencyTest: **4 потока ×1000 событий =4000** входных доставок, агрегатов и записей; итоги 4000 показаний/4000 kWh.
+  Ещё проверяются параллельное изменение подписок и завершение остальных задач при ошибке producer.
+* LeafCountVisitorTest / TransformerTest: оба trade-off расширения.
+
+Отчёты JUnit: target/surefire-reports. Runtime JSON не использует сторонние библиотеки.
+
+## Git и trade-off proof
+
+* `e4c7cac` — базовая версия: 4 visitor, 4 типа листьев, 25 тестов.
+* `7a996a6` — новый LeafCountVisitor; **ни один элемент и интерфейс Visitor не изменены**.
+* `3524deb` — новый Transformer: изменён интерфейс Visitor и все 5 visitors.
+
+Точные списки файлов и сравнение стоимости: [docs/trade-offs.md](docs/trade-offs.md).
+Новая операция требует новой реализации посетителя. Новый тип элемента требует поддержки во всей семье посетителей.
+Это выгодно при стабильных типах узлов и частом добавлении операций; для часто меняющихся типов Visitor может быть невыгоден.
+
+**Честное ограничение:** эти коммиты созданы за одну сессию 3 ноября 2026, а не в течение двух недель.
+Даты не подделаны. Пункт задания о meaningful history over 2 weeks такой историей не подтверждается.
+GitHub-репозиторий пока не создан/не опубликован: для сдачи нужен новый URL и push всей истории, а не веб-загрузка файлов.
+
+## Материалы
+
+* [UML SVG](docs/uml.svg) / [PNG](docs/uml.png) / [DOT](docs/uml.dot).
+* [Короткий отчёт для LMS](REPORT.md).
+* [Проверка требований](docs/checklist.md).
