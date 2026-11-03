@@ -13,6 +13,7 @@ public class HighLoadVisitor implements Visitor<List<GridElement>> {
     public List<GridElement> visit(Generator generator) { return select(generator, generator.outputKw()); }
     public List<GridElement> visit(Battery battery) { return select(battery, Math.abs(battery.chargingKw())); }
     public List<GridElement> visit(SmartMeter meter) { return select(meter, meter.standbyKw()); }
+    public List<GridElement> visit(Transformer transformer) { return select(transformer, transformer.lossKw()); }
 
     private List<GridElement> collect(GridContainer container) {
         List<GridElement> matches = new ArrayList<>();

@@ -31,3 +31,11 @@ The actual development dates are retained. This local session cannot demonstrate
 Changed files: src/main/java/edu/aitu/energy/visitor/LeafCountVisitor.java,
 src/test/java/edu/aitu/energy/LeafCountVisitorTest.java, README.md.
 No tree element or Visitor interface changed. A new operation implements the existing visitor contract.
+
+## Trade-off 2: new element
+
+Transformer adds 0.5 kW of losses. Updated files: tree/Transformer.java, visitor/Visitor.java,
+all five concrete visitor files, Main.java, TransformerTest.java, README.md (Java paths are below edu/aitu/energy).
+Unlike adding an operation, adding an element changes the common visitor contract and every visitor.
+The final demo contains 9 leaves, first-line net load 4.6 kW and whole-grid net load 22.8 kW.
+Baseline fixtures still contain the original eight devices and their hand-calculated 22.3 kW.

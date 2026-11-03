@@ -9,4 +9,5 @@ public interface Visitor<R> {
     R visit(Generator generator);
     R visit(Battery battery);
     R visit(SmartMeter meter);
+    R visit(Transformer transformer);
 }

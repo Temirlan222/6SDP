@@ -10,6 +10,7 @@ public class LeafCountVisitor implements Visitor<Integer> {
     public Integer visit(Generator generator) { return 1; }
     public Integer visit(Battery battery) { return 1; }
     public Integer visit(SmartMeter meter) { return 1; }
+    public Integer visit(Transformer transformer) { return 1; }
 
     private int count(GridContainer container) {
         int total = 0;

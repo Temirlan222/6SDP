@@ -10,6 +10,7 @@ public class JsonExportVisitor implements Visitor<String> {
     public String visit(Generator generator) { return leaf("Generator", generator, generator.outputKw()); }
     public String visit(Battery battery) { return leaf("Battery", battery, battery.chargingKw()); }
     public String visit(SmartMeter meter) { return leaf("SmartMeter", meter, meter.standbyKw()); }
+    public String visit(Transformer transformer) { return leaf("Transformer", transformer, transformer.lossKw()); }
 
     private String container(String type, GridContainer container) {
         String children = container.children().stream().map(child -> child.accept(this))

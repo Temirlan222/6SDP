@@ -15,6 +15,7 @@ public class InventoryVisitor implements Visitor<Map<String, Integer>> {
     public Map<String, Integer> visit(Generator generator) { return record("Generator"); }
     public Map<String, Integer> visit(Battery battery) { return record("Battery"); }
     public Map<String, Integer> visit(SmartMeter meter) { return record("SmartMeter"); }
+    public Map<String, Integer> visit(Transformer transformer) { return record("Transformer"); }
 
     private Map<String, Integer> collect(String type, GridContainer container) {
         record(type);

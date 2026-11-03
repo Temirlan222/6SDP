@@ -13,7 +13,7 @@ public class Main {
         int threads = args.length == 0 ? 4 : Integer.parseInt(args[0]);
         if (threads < 3) throw new IllegalArgumentException("Use at least 3 producer threads");
         Line first = new Line("line-1", List.of(new Consumer("home", 10), new Generator("solar", 4),
-                new Battery("storage", -2), new SmartMeter("meter", 0.1)));
+                new Battery("storage", -2), new SmartMeter("meter", 0.1), new Transformer("transformer", 0.5)));
         Line second = new Line("line-2", List.of(new Consumer("shop", 20), new Generator("wind", 5),
                 new Battery("charge", 3), new SmartMeter("meter-2", 0.2)));
         Grid grid = new Grid("north", List.of(new Substation("sub-A", List.of(first, second))));
@@ -38,6 +38,7 @@ public class Main {
 
         System.out.println("Variant 12: Energy Grid; producer pool=" + threads);
         System.out.println("Net load, kW: " + grid.accept(new NetLoadVisitor()));
+        System.out.println("Leaf count: " + grid.accept(new LeafCountVisitor()));
         System.out.println("Inventory: " + grid.accept(new InventoryVisitor()));
         System.out.println("Devices above 10 kW: " + grid.accept(new HighLoadVisitor(10)));
         System.out.println("JSON: " + grid.accept(new JsonExportVisitor()));
