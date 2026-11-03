@@ -25,3 +25,9 @@ Manual values: first line=10-4-2+.1=4.1 kW; second=20-5+3+.2=18.2 kW; whole grid
 
 Add a new visitor without editing elements, then add a new element and update the visitor family.
 The actual development dates are retained. This local session cannot demonstrate two weeks of development.
+
+## Trade-off 1: new visitor
+
+Changed files: src/main/java/edu/aitu/energy/visitor/LeafCountVisitor.java,
+src/test/java/edu/aitu/energy/LeafCountVisitorTest.java, README.md.
+No tree element or Visitor interface changed. A new operation implements the existing visitor contract.
